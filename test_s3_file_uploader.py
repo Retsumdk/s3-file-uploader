@@ -1,14 +1,28 @@
-from s3_file_uploader import digest, normalize, run
+from s3_file_uploader import LocalObjectStore, Uploader
 
-def test_normalize_deterministic():
-    assert normalize({'b': 1, 'a': 2}) == normalize({'a': 2, 'b': 1})
 
-def test_digest_stable():
-    assert digest('x') == digest('x')
-    assert digest({'k': 'v'}) == digest({'k': 'v'})
+def test_upload_dedupes_by_digest():
+    store = LocalObjectStore()
+    u = Uploader(store)
+    data = b"hello world"
+    first = u.upload(data)
+    second = u.upload(data)
+    assert first["new"] is True
+    assert second["new"] is False
+    assert second["digest"] == first["digest"]
+    assert u.duplicates == 1
 
-def test_run_shapes_result():
-    out = run({'hello': 'world'})
-    assert out['input_type'] == 'dict'
-    assert out['length'] > 0
-    assert len(out['digest']) == 64
+
+def test_verify_detects_corruption():
+    store = LocalObjectStore()
+    u = Uploader(store)
+    u.upload(b"intact")
+    assert u.verify("invalid", b"anything") is False
+
+
+def test_verify_roundtrip():
+    store = LocalObjectStore()
+    u = Uploader(store)
+    data = b"sensitive bytes"
+    res = u.upload(data)
+    assert u.verify(res["digest"], data) is True
